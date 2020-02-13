@@ -1952,6 +1952,30 @@ static bool is_child_queued(private_ike_sa_t *this, task_queue_t queue)
 }
 
 /**
+ * Check if tasks to delete the IKE_SA are queued in the given queue
+ */
+static bool is_delete_queued(private_ike_sa_t *this, task_queue_t queue)
+{
+	enumerator_t *enumerator;
+	task_t *task;
+	bool found = FALSE;
+
+	enumerator = this->task_manager->create_task_enumerator(this->task_manager,
+															queue);
+	while (enumerator->enumerate(enumerator, &task))
+	{
+		if (task->get_type(task) == TASK_IKE_DELETE ||
+			task->get_type(task) == TASK_ISAKMP_DELETE)
+		{
+			found = TRUE;
+			break;
+		}
+	}
+	enumerator->destroy(enumerator);
+	return found;
+}
+
+/**
  * Reestablish CHILD_SAs and migrate queued tasks.
  *
  * If force is true all SAs are restarted, otherwise their close/dpd_action
@@ -2035,6 +2059,12 @@ METHOD(ike_sa_t, reestablish, status_t,
 	child_sa_t *child_sa;
 	bool restart = FALSE;
 	status_t status = FAILED;
+
+	if (is_delete_queued(this, TASK_QUEUE_QUEUED))
+	{	/* don't reestablish IKE_SAs that have explicitly been deleted in the
+		 * mean time */
+		return FAILED;
+	}
 
 	if (has_condition(this, COND_REAUTHENTICATING))
 	{	/* only reauthenticate if we have children */
